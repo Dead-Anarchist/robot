@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<launch>
+
+  <param name="robot_description" 
+    command="$(find xacro)/xacro --inorder '$(find test_robot_description)/urdf/test_robot.urdf.xacro'"/>
+
+  <node name="robot_state_publisher" pkg="robot_state_publisher" type="robot_state_publisher" />
+    
+  <include file="$(find gazebo_ros)/launch/empty_world.launch">
+    <arg name="debug" value="False" />
+    <arg name="gui" value="True" />
+    <arg name="paused" value="True"/>
+    <arg name="use_sim_time" value="True"/>
+    <arg name="headless" value="False"/>
+  </include>
+   
+  <node name="spawn_urdf" pkg="gazebo_ros" type="spawn_model" 
+    args="-param robot_description -urdf -x 0 -y 0 -z 0.1 -model test_robot" />
+
+  <rosparam file="$(find test_robot_config)/config/control.yaml" command="load" />
+    
+  <node name="controller_spawner" pkg="controller_manager" type="spawner" 
+    respawn="false" output="screen"
+    args="joint_state_controller mobile_base_controller" />
+      
+    
+  <node name="rviz" pkg="rviz" type="rviz" args="-d $(find test_robot_config)/rviz/test_robot.rviz" required="true" />
+    
+  <node name="controller" pkg="test_robot_control" type="controller.py" required="true" output="screen"/>
+  
+</launch>
