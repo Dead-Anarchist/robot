@@ -3,8 +3,6 @@
 
 #include <cmath>
 
-#include <Python.h>
-
 #include <tf/tf.h>
 
 //register this planner as a BaseGlobalPlanner plugin
@@ -16,12 +14,12 @@ using namespace std;
 namespace custom_global_planner {
 
   CustomGlobalPlanner::CustomGlobalPlanner ()
-    : /*path_directory_added(false)*/ costmap(nullptr){
+    : /*path_directory_added(false)*/ costmap(nullptr), pModule(nullptr), pFunc(nullptr) {
 
   }
 
   CustomGlobalPlanner::CustomGlobalPlanner(std::string name, costmap_2d::Costmap2DROS* costmap_ros)
-   : /*path_directory_added(false)*/ costmap(nullptr) {
+   : /*path_directory_added(false)*/ costmap(nullptr), pModule(nullptr), pFunc(nullptr) {
     initialize(name, costmap_ros);
   }
 
@@ -69,59 +67,57 @@ namespace custom_global_planner {
 				     const geometry_msgs::PoseStamped& goal,
 				     std::vector<geometry_msgs::PoseStamped>& plan) {
     
-    PyObject *pName, *pModule, *pFunc;
+    PyObject *pName;
     PyObject *pArgs, *pValue,  *pValue2,  *pValue3;
     PyObject *pCostmap, *pRow;
     int i;
+    if(pModule == nullptr) {
     
-    // initialize Python
-    Py_Initialize();
-    //  add path to the navigation module TODO now export 
-    /*
-    //  if it is not already added to PYTHONPATH
-    if (!path_directory_added) {
-      wchar_t* current_path = Py_GetPath();
-      ROS_INFO("current path: %ls",  current_path);
-      wchar_t new_path[wcslen(current_path) + 100] = L"";   //  TODO calculate precise length
-      wcscpy(new_path, current_path);
-      wcscat(new_path, L":/home/ps/teach_ws/src/custom_global_planner/src/custom_global_planner");
-      Py_SetPath(new_path);
-      wchar_t* current_path2 = Py_GetPath();
-      ROS_INFO("new path: %ls",  current_path2);
-      path_directory_added = true;
-    }
-    */
-   
-    // load Python script from text file
-    const char script_filename[] = "custom_global_planner_function";
-    pName = PyUnicode_DecodeFSDefault(script_filename);
-    // Error checking of pName left out;
-    // import script in python interpreter
-    //pModule = PyImport_Import(pName);
-    pModule = PyImport_ImportModule(script_filename);
-    Py_DECREF(pName);
-    // if loading is not successfull
-    if (pModule == NULL) {
-      // print error message
-      PyErr_Print();
-      ROS_ERROR("Failed to load \"%s\"", script_filename);
-      return false;
+        // initialize Python
+        Py_Initialize();
+        //  add path to the navigation module TODO now export 
+        /*
+        //  if it is not already added to PYTHONPATH
+        if (!path_directory_added) {
+        wchar_t* current_path = Py_GetPath();
+        ROS_INFO("current path: %ls",  current_path);
+        wchar_t new_path[wcslen(current_path) + 100] = L"";   //  TODO calculate precise length
+        wcscpy(new_path, current_path);
+        wcscat(new_path, L":/home/ps/teach_ws/src/custom_global_planner/src/custom_global_planner");
+        Py_SetPath(new_path);
+        wchar_t* current_path2 = Py_GetPath();
+        ROS_INFO("new path: %ls",  current_path2);
+        path_directory_added = true;
+        }
+        */
+        // load Python script from text file
+        const char script_filename[] = "custom_global_planner_function";
+        pName = PyUnicode_DecodeFSDefault(script_filename);
+        // Error checking of pName left out;
+        // import script in python interpreter
+        //pModule = PyImport_Import(pName);
+        pModule = PyImport_ImportModule(script_filename);
+        Py_DECREF(pName);
+        // if loading is not successfull
+        if (pModule == NULL) {
+            // print error message
+            //PyErr_Print();
+            ROS_ERROR("Failed to load \"%s\"", script_filename);
+            return false;
+        }
         
-    }
-    
-    // create function handler
-    const char function_name[] = "make_trajectory";
-    pFunc = PyObject_GetAttrString(pModule, function_name);
-    // pFunc is a new reference;
-    // check if function is correct
-    if (!pFunc || !PyCallable_Check(pFunc)) {
-      PyErr_Print();
-      ROS_ERROR("Cannot find function \"%s\"", function_name);
-      Py_XDECREF(pFunc);
-      Py_DECREF(pModule);
-      return false;
-    }
-    
+        // create function handler
+        const char function_name[] = "make_trajectory";
+        pFunc = PyObject_GetAttrString(pModule, function_name);
+        // pFunc is a new reference;
+        // check if function is correct
+        if (!pFunc || !PyCallable_Check(pFunc)) {
+            ROS_ERROR("Cannot find function \"%s\"", function_name);
+            Py_XDECREF(pFunc);
+            Py_DECREF(pModule);
+            return false;
+        }
+    }    
     // calculate orientation in start and finish points
     double ori_start = 2*atan2(start.pose.orientation.z, start.pose.orientation.w);
     double ori_goal = 2*atan2(goal.pose.orientation.z, goal.pose.orientation.w);
@@ -136,11 +132,12 @@ namespace custom_global_planner {
         pRow = PyList_New(costmap->getCostmap()->getSizeInCellsX());
         for (int j = 0; j < costmap->getCostmap()->getSizeInCellsX(); ++j) {
             // add value from costmap to row
-            pValue = PyLong_FromLong(costmap->getCostmap()->getCost(i, j));
+            pValue = PyLong_FromLong(costmap->getCostmap()->getCost(j, i));
             PyList_SetItem(pRow, j, pValue);
+            ROS_ERROR("elem [%i , %i] = %i", i,j,costmap->getCostmap()->getCost(j, i));
         }
         // add row to costmap
-        PyList_SetItem(pCostmap, i, pRow);
+        PyList_SetItem(pCostmap, costmap->getCostmap()->getSizeInCellsY() - i -  1, pRow);
     }
     
     // create tuple of input arguments
@@ -172,9 +169,6 @@ namespace custom_global_planner {
     Py_DECREF(pRow);
     // if call is not successfull, print error message
     if (pValue == NULL) {
-      Py_DECREF(pFunc);
-      Py_DECREF(pModule);
-      PyErr_Print();
       ROS_ERROR("Call failed");
       return false;
     }
@@ -183,9 +177,6 @@ namespace custom_global_planner {
     if (!PyTuple_Check(pValue)) {
         Py_DECREF(pValue);
         Py_DECREF(pArgs);
-        Py_DECREF(pFunc);
-        Py_DECREF(pModule);
-        PyErr_Print();
         ROS_ERROR("Wrong type of return value (it is not a tuple)");
         return false;
     }
@@ -193,9 +184,6 @@ namespace custom_global_planner {
     if (sz < 2) {
         Py_DECREF(pValue);
         Py_DECREF(pArgs);
-        Py_DECREF(pFunc);
-        Py_DECREF(pModule);
-        PyErr_Print();
         ROS_ERROR("The returned tuple is too little (%li instead of 2)",  sz);
         return false;
     }
@@ -206,9 +194,6 @@ namespace custom_global_planner {
         Py_DECREF(pValue);
         Py_DECREF(pValue2);
         Py_DECREF(pArgs);
-        Py_DECREF(pFunc);
-        Py_DECREF(pModule);
-        PyErr_Print();
         ROS_ERROR("Call failed");        
         return false;
     }
@@ -220,9 +205,6 @@ namespace custom_global_planner {
         Py_DECREF(pValue);
         Py_DECREF(pValue2);
         Py_DECREF(pArgs);
-        Py_DECREF(pFunc);
-        Py_DECREF(pModule);
-        PyErr_Print();
         ROS_ERROR("Second element of the returned tuple is not a list");        
         return false;
     }
@@ -238,9 +220,6 @@ namespace custom_global_planner {
             Py_DECREF(pValue2);
             Py_DECREF(pValue3);
             Py_DECREF(pArgs);
-            Py_DECREF(pFunc);
-            Py_DECREF(pModule);
-            PyErr_Print();
             ROS_ERROR("Wrong type of element %i in the trajectory (it is not a tuple)",  i);
             return false;
         }
@@ -250,9 +229,6 @@ namespace custom_global_planner {
             Py_DECREF(pValue2);
             Py_DECREF(pValue3);
             Py_DECREF(pArgs);
-            Py_DECREF(pFunc);
-            Py_DECREF(pModule);
-            PyErr_Print();
             ROS_ERROR("The returned trajectory element %i is too short (%li instead of 3)", i, sz);
             return false;
         }        
@@ -262,9 +238,6 @@ namespace custom_global_planner {
             Py_DECREF(pValue2);
             Py_DECREF(pValue3);
             Py_DECREF(pArgs);
-            Py_DECREF(pFunc);
-            Py_DECREF(pModule);
-            PyErr_Print();
             ROS_ERROR("Error trying to convert element 0 in trajectory point %i to float",  i);
             return false;
         }
@@ -274,9 +247,6 @@ namespace custom_global_planner {
             Py_DECREF(pValue2);
             Py_DECREF(pValue3);
             Py_DECREF(pArgs);
-            Py_DECREF(pFunc);
-            Py_DECREF(pModule);
-            PyErr_Print();
             ROS_ERROR("Error trying to convert element 1 in trajectory point %i to float",  i);
             return false;
         }
@@ -286,9 +256,6 @@ namespace custom_global_planner {
             Py_DECREF(pValue2);
             Py_DECREF(pValue3);
             Py_DECREF(pArgs);
-            Py_DECREF(pFunc);
-            Py_DECREF(pModule);
-            PyErr_Print();
             ROS_ERROR("Error trying to convert element 2 in trajectory point %i to float",  i);
             return false;
         }
@@ -311,12 +278,13 @@ namespace custom_global_planner {
     ROS_INFO("call is successfull\n");
     Py_DECREF(pValue2);
     Py_DECREF(pValue);
-    Py_XDECREF(pFunc);
-    Py_DECREF(pModule);
-    if (Py_FinalizeEx() < 0) {
-      return false;
-    }     
     return true;
   }
+ 
+  CustomGlobalPlanner::~CustomGlobalPlanner(){
+    Py_FinalizeEx();
+  }     
+
+     
  
 }; 

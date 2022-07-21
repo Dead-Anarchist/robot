@@ -13,6 +13,8 @@
 #include <base_local_planner/world_model.h>
 #include <base_local_planner/costmap_model.h>
 
+#include <Python.h>
+
 using std::string;
 
  
@@ -22,6 +24,8 @@ class CustomGlobalPlanner : public nav_core::BaseGlobalPlanner {
   private:
     //bool path_directory_added;
     costmap_2d::Costmap2DROS* costmap;
+    PyObject *pModule;
+    PyObject *pFunc;
   public:
 
     CustomGlobalPlanner();
@@ -33,6 +37,7 @@ class CustomGlobalPlanner : public nav_core::BaseGlobalPlanner {
                   const geometry_msgs::PoseStamped& goal,
                   std::vector<geometry_msgs::PoseStamped>& plan
                  );
+    virtual ~CustomGlobalPlanner();
 };
 };
  

@@ -16,7 +16,7 @@ local_costmap:
 
   # should always be the same as the global costmap resolution, 
   # which is always the same as static map resolution
-  resolution: 0.5
+  resolution: 1
 
   #origin_x: 0.0
   #origin_y: 0.0
